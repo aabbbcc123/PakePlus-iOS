@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>车机密码计算器</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(circle at 20% 0%,#1b2a4a,#0b1220 65%);
+    min-height:100vh;color:#e6eefc;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .wrap{width:100%;max-width:520px;}
+  h1{font-size:20px;text-align:center;margin-bottom:6px;font-weight:600;letter-spacing:1px;}
+  .sub{text-align:center;font-size:12px;color:#7c8db5;margin-bottom:18px;letter-spacing:.5px;}
+
+  .clock{
+    text-align:center;font-size:14px;color:#8fb3ff;
+    background:rgba(80,140,255,.1);border:1px solid rgba(80,140,255,.25);
+    border-radius:10px;padding:9px;margin-bottom:18px;
+    font-variant-numeric:tabular-nums;letter-spacing:.5px;
+  }
+
+  .card{
+    position:relative;overflow:hidden;border-radius:16px;
+    background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.1);
+    padding:18px 20px;margin-bottom:14px;
+  }
+  .card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;}
+  .card.eng::before{background:linear-gradient(#4fd1c5,#3182ce);}
+  .card.enc::before{background:linear-gradient(#f6ad55,#ed64a6);}
+  .label{font-size:13px;color:#9fb0d0;margin-bottom:10px;letter-spacing:1px;}
+  .pwd{
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:38px;font-weight:700;letter-spacing:7px;
+    font-variant-numeric:tabular-nums;line-height:1.1;
+  }
+  .card.eng .pwd{color:#4fd1c5;text-shadow:0 0 18px rgba(79,209,197,.35);}
+  .card.enc .pwd{color:#f6ad55;text-shadow:0 0 18px rgba(246,173,85,.35);}
+
+  .copy{
+    position:absolute;right:14px;top:14px;
+    padding:6px 12px;font-size:12px;border-radius:8px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06);color:#cfdcf5;
+    transition:.15s;
+  }
+  .copy:active{transform:scale(.94);}
+  .copy.ok{background:#2f9e75;border-color:#2f9e75;color:#fff;}
+
+  .manual{margin:16px 0 10px;font-size:13px;color:#9fb0d0;}
+  .manual label{display:inline-flex;align-items:center;cursor:pointer;user-select:none;}
+  .manual input[type=checkbox]{width:16px;height:16px;margin-right:6px;accent-color:#3182ce;}
+  .inputs{display:none;margin-top:12px;gap:10px;align-items:center;flex-wrap:wrap;}
+  .inputs.show{display:flex;}
+  .inputs span{font-size:13px;color:#8fb3ff;}
+  .inputs input[type=number]{
+    width:60px;padding:7px;border-radius:8px;text-align:center;
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06);color:#e6eefc;font-size:14px;
+  }
+  .inputs input:focus{outline:none;border-color:#3182ce;}
+
+  .detail{
+    font-size:12px;line-height:2;color:#7c8db5;
+    background:rgba(255,255,255,.03);
+    border:1px dashed rgba(255,255,255,.12);
+    border-radius:12px;padding:12px 16px;margin-top:6px;
+    word-break:break-all;
+  }
+  .detail b{color:#9fb0d0;font-weight:500;}
+  .detail em{color:#4fd1c5;font-style:normal;}
+  .detail i{color:#f6ad55;font-style:normal;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>车机密码计算器</h1>
+  <div class="sub">工程模式 / 加密模式 · 实时计算</div>
+
+  <div class="clock" id="clock">--</div>
+
+  <div class="card eng">
+    <button class="copy" data-target="engPwd">复制</button>
+    <div class="label">工程模式密码</div>
+    <div class="pwd" id="engPwd">------</div>
+  </div>
+
+  <div class="card enc">
+    <button class="copy" data-target="encPwd">复制</button>
+    <div class="label">加密模式密码</div>
+    <div class="pwd" id="encPwd">------</div>
+  </div>
+
+  <div class="manual">
+    <label><input type="checkbox" id="manualChk"> 手动指定时间</label>
+    <div class="inputs" id="inputs">
+      <input type="number" id="inM" min="1" max="12" placeholder="月" value="1">
+      <span>月</span>
+      <input type="number" id="inD" min="1" max="31" placeholder="日" value="1">
+      <span>日</span>
+      <input type="number" id="inH" min="0" max="23" placeholder="时" value="0">
+      <span>时</span>
+    </div>
+  </div>
+
+  <div class="detail" id="detail"></div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var pad2 = function (n) { return String(n).padStart(2, '0'); };
+  var pad6 = function (n) { return String(n).padStart(6, '0'); };
+  var manual = false;
+
+  /* 核心计算：M=月 D=日 H=时 */
+  function compute(M, D, H) {
+    // 当前:月日时 —— 拼成六位数 MMDDHH
+    var mdh = M * 10000 + D * 100 + H;
+
+    // 工程模式：20250110 * 月日时 - 时，取后六位
+    var product = 20250110 * mdh;
+    var rawEng  = product - H;
+    var engNum  = ((rawEng % 1000000) + 1000000) % 1000000;
+    var engStr  = pad6(engNum);
+
+    // 加密模式：工程模式密码 + 当前时，取后六位
+    var rawEnc  = engNum + H;
+    var encNum  = ((rawEnc % 1000000) + 1000000) % 1000000;
+    var encStr  = pad6(encNum);
+
+    return {
+      mdh: mdh, product: product, rawEng: rawEng,
+      engNum: engNum, engStr: engStr,
+      rawEnc: rawEnc, encStr: encStr
+    };
+  }
+
+  function getInt(id, def, min, max) {
+    var v = parseInt($(id).value, 10);
+    if (isNaN(v)) return def;
+    return Math.min(max, Math.max(min, v));
+  }
+
+  function update() {
+    var now = new Date();
+    var M, D, H, clockText;
+
+    if (manual) {
+      M = getInt('inM', 1, 1, 12);
+      D = getInt('inD', 1, 1, 31);
+      H = getInt('inH', 0, 0, 23);
+      clockText = '手动模式：' + pad2(M) + ' 月 ' + pad2(D) + ' 日 ' + pad2(H) + ' 时';
+    } else {
+      M = now.getMonth() + 1;
+      D = now.getDate();
+      H = now.getHours();
+      clockText = now.getFullYear() + '-' + pad2(M) + '-' + pad2(D) + ' ' +
+                  pad2(H) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+    }
+
+    var r = compute(M, D, H);
+
+    $('clock').textContent  = clockText;
+    $('engPwd').textContent = r.engStr;
+    $('encPwd').textContent = r.encStr;
+
+    $('detail').innerHTML =
+      '<b>当前月日时：</b>' + pad6(r.mdh) + '（' + M + '月' + D + '日' + H + '时）<br>' +
+      '<b>工程模式：</b>20250110 × ' + r.mdh + ' = ' + r.product +
+        '，减 ' + H + ' = ' + r.rawEng + '<br>' +
+      '　取后六位 → <em>' + r.engStr + '</em><br>' +
+      '<b>加密模式：</b>' + r.engNum + ' + ' + H + ' = ' + r.rawEnc +
+        ' → 取后六位 <i>' + r.encStr + '</i>';
+  }
+
+  /* 复制 */
+  function fallbackCopy(text, cb) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); cb(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  function copyText(text, btn) {
+    var done = function () {
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      btn.classList.add('ok');
+      setTimeout(function () {
+        btn.textContent = old;
+        btn.classList.remove('ok');
+      }, 1200);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {
+        fallbackCopy(text, done);
+      });
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var txt = $(btn.dataset.target).textContent.replace(/\s/g, '');
+      if (txt && txt !== '------') copyText(txt, btn);
+    });
+  });
+
+  $('manualChk').addEventListener('change', function (e) {
+    manual = e.target.checked;
+    $('inputs').classList.toggle('show', manual);
+    if (manual) {
+      var now = new Date();
+      $('inM').value = now.getMonth() + 1;
+      $('inD').value = now.getDate();
+      $('inH').value = now.getHours();
+    }
+    update();
+  });
+
+  ['inM', 'inD', 'inH'].forEach(function (id) {
+    $(id).addEventListener('input', update);
+  });
+
+  update();
+  setInterval(update, 1000);
+})();
+</script>
+</body>
+</html>
